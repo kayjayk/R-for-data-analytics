@@ -1,0 +1,253 @@
+---
+title: "5th Assignment"
+author: "Kijun Kwon"
+date: "2018-12-20"
+output: html_document
+---
+```{r eval = T, echo = T}
+library(dplyr)
+library(stringr)
+library(tm)
+library(wordcloud)
+library(plyr)
+library(arules)
+library(arulesViz)
+library(igraph)
+```
+
+Q1)
+```{r eval = T, echo = T}
+papers <- read.csv("4th Assignment Text Mining 2013170833.csv")
+p_num <- nrow(papers)
+p_num
+```
+
+Q2)
+```{r eval = T, echo = T}
+years <- NULL
+
+for(i in 1:p_num){
+  tmp_years <- lapply(strsplit(as.String(papers$meta[i]), ' ', fixed = T),'[',4) %>% unlist
+  years <- c(years, tmp_years)
+}
+years_tab <- table(years)
+barplot(years_tab ,main='Submission Years',xlab='Years group',ylab='Proportion')
+pie(years_tab,main='Submission Years')
+mosaicplot(years_tab ,main='Submission Years',xlab='Years group')
+```
+
+Q3)
+```{r eval = T, echo = T}
+num_auth <- 0
+for(i in 1:p_num){
+  tmp_num <- length(strsplit(as.String(papers$author[i]), ',', fixed = T) %>% unlist)
+  if(num_auth<tmp_num){
+    num_row <- i
+    num_auth <- tmp_num
+  }
+}
+
+papers$title[num_row]
+strsplit(as.String(papers$author[num_row]), ',', fixed = T)
+```
+
+Q4)
+```{r eval = T, echo = T}
+len_title <- 0
+for(i in 1:p_num){
+  tmp_num <- nchar(as.String(papers$title[i]))
+  if(len_title<tmp_num){
+    num_row <- i
+    len_title <- tmp_num
+  }
+}
+
+papers$title[num_row]
+```
+
+Q5)
+```{r eval = T, echo = T}
+years_list <- strsplit(levels(factor(years)), ' ', fixed = T)
+
+len_title <- NULL
+len_abs <- NULL
+num_auth <- NULL
+for(i in years_list){
+  
+  count <- 0
+  tmp_len_title <- 0
+  tmp_len_abs <- 0
+  tmp_num_auth <- 0
+  
+  for(j in 1:p_num){
+    if(years[j] == i){
+      count <- count + 1
+      tmp_len_title <- tmp_len_title + nchar(as.String(papers$title[j]))
+      tmp_len_abs <- tmp_len_abs + nchar(as.String(papers$abstract[j]))
+      tmp_num_auth <- tmp_num_auth + length(strsplit(as.String(papers$author[j]), ',', fixed = T) %>% unlist)
+    }
+  }
+  
+  len_title <- c(len_title, tmp_len_title/count) 
+  len_abs <- c(len_abs, tmp_len_abs/count) 
+  num_auth <- c(num_auth, tmp_num_auth/count)
+}
+
+data.frame(len_title, len_abs, num_auth, row.names = years_list)
+```
+
+
+```{r eval = T, echo = T}
+idx_list <- list()
+
+for(i in years_list){
+  tmp <- which(years==i)
+  idx_list[length(idx_list)+1] <- list(tmp)
+}
+
+years_list[length(years_list)+1] <- list("all")
+idx_list[length(idx_list)+1] <- list(1:length(years))
+names(idx_list) <- years_list
+
+abs_list <- NULL
+for(i in 1:length(years_list)){
+  abs_tmp <- as.data.frame(papers$abstract[idx_list[i] %>% unlist])
+  abs_list <- c(abs_list, abs_tmp)
+}
+
+# Construct a list of corpuses
+
+corp_list <- list()
+for(i in 1:length(years_list)){
+  corp_tmp <- Corpus(VectorSource(as.factor(abs_list[i] %>% unlist)))
+  corp_list[i] <- list(corp_tmp)
+}
+
+# Data preprocessing
+# deep learning으로 검색하였으므로, redundancy를 예상하여 "deep"과 "learning"은 제외했다.
+myStopwords <- c(stopwords("SMART"), "deep", "learning")
+prep_list <- list()
+for(i in 1:length(years_list)){
+  prep_temp <- tm_map(corp_list[[i]], content_transformer(tolower))
+  prep_temp <- tm_map(prep_temp, content_transformer(removePunctuation))
+  prep_temp <- tm_map(prep_temp, content_transformer(removeNumbers))
+  prep_temp <- tm_map(prep_temp, removeWords, myStopwords)
+  prep_temp <- tm_map(prep_temp, stemDocument)
+  prep_list[i] <- list(prep_temp)
+}
+
+# Construct Term-Document Matrix, Word cloud
+tdm_list <- list()
+wc_list <- list()
+for(i in 1:length(years_list)){
+  tmp_tdm <- TermDocumentMatrix(prep_list[[i]], control = list(minWordLength = 1))
+  tdm_list[i] <- list(tmp_tdm)
+  tmp_wc <- as.matrix(tmp_tdm)
+  wc_list[i] <- list(tmp_wc)
+}
+
+```
+
+Q6)
+```{r eval = T, echo = T}
+
+sparsity <- c(0, 89, 93, 97, 98, 99, 99)
+dat <- data.frame(years_list[1:7] %>% unlist, sparsity, stringsAsFactors=FALSE)
+dat
+```
+
+Q7)
+```{r eval = T, echo = T}
+word_freq <- sort(rowSums(wc_list[[length(wc_list)]]), decreasing=TRUE)
+word_freq[1:50]
+```
+
+Q8)
+```{r eval = T, echo = T}
+wf_list <- list()
+for(i in 1:(length(years_list))){
+  wd_tmp <- sort(rowSums(wc_list[[i]]), decreasing=TRUE)
+  wf_list[i] <- list(wd_tmp)
+}
+for(i in 1:(length(years_list)-1)){
+  barplot(wf_list[[i]][1:8], main='Frequent Words',xlab='Words',ylab='Frequency')
+}
+```
+
+network 어는 항상 가장 많이 쓰이는 단어였다.(2011년은 표본이 1개라 제외)
+과거에 비해 'model', 'data', 'image'의 사용 빈도가 늘어나고 있으며, 'represent'는 사용빈도가 줄어들고 있다.
+
+Q9)
+```{r eval = T, echo = T}
+
+for(i in 1:length(years_list)){
+  name_tmp <- names(wf_list[[i]])
+  wcd_tmp <- data.frame(word=name_tmp, freq=wf_list[[i]])
+
+  pal <- brewer.pal(8, "Dark2")
+  wordcloud(wcd_tmp$word, wcd_tmp$freq, min.freq=300, scale = c(3, 0.1), 
+          rot.per = 0.1, col=pal, random.order=F)
+}
+
+
+
+```
+image라는 단어가 최근에 많이 등장했는데, 최근 산업에서 deep learning이 시각 인식에 많이 접목됨을 추측할 있다.
+
+Q10)
+```{r eval = T, echo = T}
+
+for(i in 4:length(years_list)){
+  tmp_wcm <- wc_list[[i]]
+  tmp_wcm[tmp_wcm >= 1] <- 1
+
+freq_idx1 <- which(rowSums(tmp_wcm) > length(idx_list[[i]])/3)
+freq_wcmat1 <- wc_list[[i]][freq_idx1,]
+
+# Transform into a term-term adjacency matrix
+termMatrix1 <- freq_wcmat1 %*% t(freq_wcmat1)
+# inspect terms numbered 5 to 10
+termMatrix1[1:10,1:10]
+
+g1 <- graph.adjacency(termMatrix1, weighted=T, mode = "undirected")
+g1 <- simplify(g1)
+V(g1)$label <- V(g1)$name
+V(g1)$degree <- degree(g1)
+g1 <- delete.edges(g1, which(E(g1)$weight <= 3))
+
+set.seed(3952)
+layout1 <- layout.fruchterman.reingold(g1)
+
+# Make the network look better
+V(g1)$label.cex <- V(g1)$degree/max(V(g1)$degree)
+V(g1)$label.color <- rgb(0, 0, 0.2, 0.8)
+V(g1)$frame.color <- NA
+egam1 <- 3*(log(E(g1)$weight+1))/max(log(E(g1)$weight+1))
+E(g1)$color <- rgb(0.5, 0.5, 0)
+E(g1)$width <- egam1
+# plot the graph in layout1
+plot(g1, layout=layout.kamada.kawai)
+}
+
+```
+'perform'과 'train'의 밀접한 관계를 볼 수 있다. train에 따라 신경망 model의 성능이 결정되기 때문이다.
+(2013년도까지는 표본이 적어서 임의로 제외하였음.)
+
+Q11)
+```{r eval = FALSE, echo = T}
+
+insp_list <- NULL
+for(i in 3:length(years_list)){
+  tmp_tran <- as.matrix(t(tdm_list[[i]]))
+  tmp_tran <- as(tmp_tran, "transactions")
+
+  tmp_rules <- apriori(tmp_tran, parameter=list(minlen=2,supp=0.1, conf=0.7))
+  insp_list[i] <- list(inspect(tmp_rules)[1:10,])
+}
+insp_list
+
+
+
+```
+15년도 분석을 보면, experiment -> result가 1위다. 즉, 실험을 통해 결과를 도출하는 방식이 많이 이루어졌다.
+그 후 16년도부터 layer라는 단어가 급증했고, 17년도 부터는 CNN 기법이 대세를 이루었다.
